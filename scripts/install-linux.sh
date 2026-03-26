@@ -93,27 +93,53 @@ check_bpf_support() {
         mount -t debugfs debugfs /sys/kernel/debug || log_warn "Failed to mount debugfs"
     fi
 }
-
-# Download and install binary
 install_binary() {
     local arch=$(detect_arch)
-    local download_url="https://github.com/mirastacklabs-ai/telegen/releases/download/${TELEGEN_VERSION}/telegen-linux-${arch}"
+    local download_url="https://github.com/mirastacklabs-ai/telegen/releases/download/release%2Fmark-v3.0.0/telegen-linux-${arch}.tar.gz"
     
     log_info "Downloading Telegen ${TELEGEN_VERSION} for linux/${arch}..."
     
+    local tmp_dir=$(mktemp -d)
+    cd "$tmp_dir"
+    
     if command -v curl &> /dev/null; then
-        curl -sSL -o "${TELEGEN_INSTALL_DIR}/telegen" "$download_url"
+        curl -sSL -o telegen.tar.gz "$download_url"
     elif command -v wget &> /dev/null; then
-        wget -q -O "${TELEGEN_INSTALL_DIR}/telegen" "$download_url"
+        wget -q -O telegen.tar.gz "$download_url"
     else
-        log_error "Neither curl nor wget found. Please install one of them."
+        log_error "Neither curl nor wget found."
         exit 1
     fi
     
+    # Extract the tarball
+    tar -xzf telegen.tar.gz
+    
+    # Find the binary (common names: telegen, telegen-linux-amd64)
+    local binary_file=""
+    if [[ -f "telegen" ]]; then
+        binary_file="telegen"
+    elif [[ -f "telegen-linux-${arch}" ]]; then
+        binary_file="telegen-linux-${arch}"
+    else
+        # Look for any regular file that is executable (fallback)
+        binary_file=$(find . -type f -executable -not -name "*.tar.gz" -print -quit 2>/dev/null)
+        binary_file=${binary_file#./}
+    fi
+    
+    if [[ -z "$binary_file" || ! -f "$binary_file" ]]; then
+        log_error "Could not find binary in tarball. Contents:"
+        ls -la
+        exit 1
+    fi
+    
+    mv "$binary_file" "${TELEGEN_INSTALL_DIR}/telegen"
     chmod +x "${TELEGEN_INSTALL_DIR}/telegen"
+    
     log_info "Binary installed to ${TELEGEN_INSTALL_DIR}/telegen"
+    
+    cd /
+    rm -rf "$tmp_dir"
 }
-
 # Create telegen user for collector mode
 create_user() {
     if [[ "$TELEGEN_MODE" == "collector" ]]; then
